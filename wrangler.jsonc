@@ -1,0 +1,68 @@
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "cf-ai-memory-assistant",
+  "main": "src/server.ts",
+  "compatibility_date": "2025-11-01",
+  "compatibility_flags": ["nodejs_compat"],
+
+  // ── Workers AI ─────────────────────────────────────────────────────────────
+  // Llama 3.3 70B FP8 Fast — runs on Cloudflare's GPU fleet, no external key
+  "ai": {
+    "binding": "AI"
+  },
+
+  // ── Static Assets ──────────────────────────────────────────────────────────
+  // Serves the Vite-built React frontend. @cloudflare/vite-plugin manages this
+  // automatically during dev/build. Agent WebSocket routes bypass the CDN.
+  "assets": {
+    "not_found_handling": "single-page-application",
+    "run_worker_first": ["/agents/*"]
+  },
+
+  // ── Durable Objects ────────────────────────────────────────────────────────
+  // One TradingAgent instance per user session. Owns the WebSocket connection,
+  // chat history, research notes, and report tracking — all in SQLite.
+  "durable_objects": {
+    "bindings": [
+      {
+        "name": "TradingAgent",
+        "class_name": "TradingAgent"
+      }
+    ]
+  },
+
+  // SQLite migration — enables embedded SQLite for this Durable Object class
+  "migrations": [
+    {
+      "tag": "v1",
+      "new_sqlite_classes": ["TradingAgent"]
+    }
+  ],
+
+  // ── Cloudflare Workflows ───────────────────────────────────────────────────
+  // DeepResearchWorkflow handles long-running, multi-step research jobs with
+  // durable execution and per-step retry semantics. Runs independently from
+  // the real-time chat loop — this is the key architectural separation.
+  "workflows": [
+    {
+      "binding": "DEEP_RESEARCH",
+      "name": "deep-research-workflow",
+      "class_name": "DeepResearchWorkflow"
+    }
+  ],
+
+  // ── KV Namespace ───────────────────────────────────────────────────────────
+  // Stores completed research reports (structured JSON, 30-day TTL).
+  // Written by the Workflow, read by the TradingAgent via the chat tools.
+  //
+  // Before deploying to production, create this namespace:
+  //   npx wrangler kv namespace create REPORTS
+  // Then replace the placeholder id below with the real one.
+  "kv_namespaces": [
+    {
+      "binding": "REPORTS",
+      "id": "48c0ca3329e944218e48d9e04d071b43",
+      "preview_id": "4c06ce5f35654313a515a20c33a4c3f2"
+    }
+  ]
+}
